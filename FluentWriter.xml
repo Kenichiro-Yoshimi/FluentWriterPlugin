@@ -1,0 +1,60 @@
+<ServerManagerConfiguration>
+  <ProxyGroup name="writers">
+
+  <WriterProxy name="FluentWriter"
+               class="vtkFluentWriter"
+               base_proxygroup="internal_writers"
+               base_proxyname="ParallelWriterBase">
+    <Documentation
+      short_help="Write Fluent files.">
+      Writer to write Fluent files.
+    </Documentation>
+    <InputProperty command="SetInputConnection"
+                   name="Input">
+      <ProxyGroupDomain name="groups">
+        <Group name="sources"/>
+        <Group name="filters"/>
+      </ProxyGroupDomain>
+      <DataTypeDomain name="input_type"
+                      composite_data_supported="1">
+        <DataType value="vtkCompositeDataSet"/>
+        <DataType value="vtkDataSet" />
+      </DataTypeDomain>
+      <Documentation>The input filter/source whose output dataset is to
+      be written to the file.</Documentation>
+    </InputProperty>
+    <IntVectorProperty command="SetWriteAllTimeSteps"
+                       default_values="0"
+                       name="WriteAllTimeSteps"
+                       number_of_elements="1">
+      <BooleanDomain name="bool" />
+      <Documentation>When WriteAllTimeSteps is turned ON, the writer is
+      executed once for each time step available from its input.</Documentation>
+    </IntVectorProperty>
+    <IntVectorProperty command="SetBinaryFile"
+                       default_values="1"
+                       name="BinaryFile"
+                       number_of_elements="1">
+      <BooleanDomain name="bool" />
+      <Documentation>When BinaryFile is turned ON, the writer exports data
+      in binary representation.</Documentation>
+    </IntVectorProperty>
+    <IntVectorProperty command="SetTransientGeometry"
+                       default_values="0"
+                       name="TransientGeometry"
+                       number_of_elements="1">
+      <BooleanDomain name="bool" />
+      <Documentation>When TransientGeometry is turned ON, the writer writes
+      geometry data for each time step from its input.</Documentation>
+    </IntVectorProperty>
+    <Hints>
+      <Property name="Input" show="0"/>
+      <Property name="FileName" show="0"/>
+        <Property name="GhostLevel" show="0" />
+      <WriterFactory extensions="cas" file_description="Fluent File Format (Plugin)"/>
+    </Hints>
+  </WriterProxy>
+
+  </ProxyGroup>
+
+</ServerManagerConfiguration>

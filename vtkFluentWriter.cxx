@@ -227,7 +227,8 @@ int vtkFluentWriter::GlobalContinueExecuting(int localContinueExecution)
 //----------------------------------------------------------------------------
 void vtkFluentWriter::WriteData()
 {
-  this->BaseName = vtksys::SystemTools::GetFilenamePath(this->FileName) + "/" +
+  std::string realPath =vtksys::SystemTools::GetRealPath(this->FileName);
+  this->BaseName = vtksys::SystemTools::GetFilenamePath(realPath) + "/" +
     vtksys::SystemTools::GetFilenameWithoutLastExtension(this->FileName);
 
   int group = 0;
@@ -440,13 +441,13 @@ void vtkFluentWriter::OpenFluentFile(char* extension)
 //----------------------------------------------------------------------------
 void vtkFluentWriter::CloseFluentFile()
 {
-  if (!this->caseFd)
+  if (this->caseFd)
   {
     fclose(this->caseFd);
     this->caseFd = nullptr;
   }
 
-  if (!this->dataFd)
+  if (this->dataFd)
   {
     fclose(this->dataFd);
     this->dataFd = nullptr;

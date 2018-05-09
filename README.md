@@ -1,4 +1,4 @@
-# FluentWriterPlugin (Under Construction)
+# FluentWriterPlugin
 
 This repository contains the Fluent Writer plugin for ParaView
 

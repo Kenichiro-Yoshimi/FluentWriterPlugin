@@ -59,6 +59,9 @@ vtkFluentWriter::vtkFluentWriter()
   this->FileName = nullptr;
   this->BinaryFile = 0;
 
+  this->caseFd = nullptr;
+  this->dataFd = nullptr;
+
   this->GhostLevel = 0;
   this->WriteAllTimeSteps = 0;
   this->TransientGeometry = 0;
@@ -227,8 +230,7 @@ int vtkFluentWriter::GlobalContinueExecuting(int localContinueExecution)
 //----------------------------------------------------------------------------
 void vtkFluentWriter::WriteData()
 {
-  std::string realPath =vtksys::SystemTools::GetRealPath(this->FileName);
-  this->BaseName = vtksys::SystemTools::GetFilenamePath(realPath) + "/" +
+  this->BaseName = vtksys::SystemTools::GetFilenamePath(this->FileName) + "/" +
     vtksys::SystemTools::GetFilenameWithoutLastExtension(this->FileName);
 
   int group = 0;
@@ -441,13 +443,13 @@ void vtkFluentWriter::OpenFluentFile(char* extension)
 //----------------------------------------------------------------------------
 void vtkFluentWriter::CloseFluentFile()
 {
-  if (this->caseFd)
+  if (this->caseFd != nullptr)
   {
     fclose(this->caseFd);
     this->caseFd = nullptr;
   }
 
-  if (this->dataFd)
+  if (this->dataFd != nullptr)
   {
     fclose(this->dataFd);
     this->dataFd = nullptr;

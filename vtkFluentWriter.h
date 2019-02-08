@@ -88,6 +88,11 @@ public:
   vtkBooleanMacro(TransientGeometry, int);
   //@}
 
+  //
+  //  Structures
+  //
+  struct Face;
+
 protected:
   vtkFluentWriter();
   ~vtkFluentWriter();
@@ -127,6 +132,7 @@ protected:
   std::map<std::string, int> VariableMap;
   std::list<std::string> VariableNames;
   std::string BlockIdArrayName;
+  std::map<int, std::vector<Face>> Faces;
 
   int ProcessRequest(vtkInformation* request,
                      vtkInformationVector** inputVector,

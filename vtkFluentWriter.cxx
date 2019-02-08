@@ -53,6 +53,22 @@ unsigned int GetNumberOfDigits(unsigned int i)
 }
 }
 
+struct vtkFluentWriter::Face
+{
+  int type;
+  unsigned int zone;
+  std::vector<int> nodes;
+  int c0;
+  int c1;
+  int periodicShadow;
+  int parent;
+  int child;
+  int interfaceFaceParent;
+  int interfaceFaceChild;
+  int ncgParent;
+  int ncgChild;
+};
+
 //----------------------------------------------------------------------------
 vtkFluentWriter::vtkFluentWriter()
 {
@@ -585,7 +601,7 @@ void vtkFluentWriter::ConstructBlockInfo()
   this->BoundaryFaceBlockIds.clear();
   this->VolumeBlockIds.clear();
 
-  for (size_t i = 0; i < this->FlattenedInput.size(); ++i)
+  for (int i = 0; i < this->FlattenedInput.size(); ++i)
   {
     vtkIdType numCells = this->FlattenedInput[i]->GetNumberOfCells();
     this->NumBlockElments.push_back(numCells);
@@ -627,7 +643,7 @@ void vtkFluentWriter::MergeBlocks()
   // face of another volumetric element or to a surface element. 
   if (this->BoundaryFaceBlockIds.size() == 0)
   {
-    int group = this->FlattenedInput.size();
+    int group = (int)this->FlattenedInput.size();
 
     vtkDataSetSurfaceFilter *surface = vtkDataSetSurfaceFilter::New();
     surface->SetInputData(this->UnstructuredOutput);
@@ -749,12 +765,12 @@ int vtkFluentWriter::WriteGeometry()
   this->WriteStringToFile("(0 \"Dimension:\")\n", this->caseFd);
   this->WriteStringToFile("(2 3)\n\n", this->caseFd);
 
-  int entityId = this->EntityOffset;
+  unsigned entityId = this->EntityOffset;
 
-  vtkUnsignedCharArray* boundaryDataArray = vtkUnsignedCharArray::SafeDownCast(
+  vtkUnsignedCharArray* blockIdArray = vtkUnsignedCharArray::SafeDownCast(
     this->UnstructuredOutput->GetCellData()->GetArray(this->BlockIdArrayName.c_str()));
 
-  if (!boundaryDataArray)
+  if (!blockIdArray)
   {
     vtkErrorMacro("BlockIdScalars array does not exist.");
     return 0;
@@ -762,30 +778,18 @@ int vtkFluentWriter::WriteGeometry()
 
   this->NumOfPoints = this->UnstructuredOutput->GetNumberOfPoints();
   vtkIdType numOfCells = this->UnstructuredOutput->GetNumberOfCells();
-  vtkIdType numOfFaces = 0;
-  vtkIdType numOfBoundaryFaces = 0;
   this->NumOfVolumes = 0;
   vtkIdList* volumeCellIdArray = vtkIdList::New();
   for (vtkIdType cId = 0; cId < numOfCells; ++cId)
   {
     vtkCell* cell = this->UnstructuredOutput->GetCell(cId);
-    if (cell->GetCellDimension() == 2)
-    {
-      ++numOfBoundaryFaces;
-      continue;
-    }
 
     if (cell->GetCellDimension() == 3)
     {
       volumeCellIdArray->InsertNextId(cId);
-      numOfFaces += cell->GetNumberOfFaces();
       this->NumOfVolumes += 1;
     }
   }
-
-  vtkIdType numOfInteriorFaces = numOfFaces - numOfBoundaryFaces;
-  numOfInteriorFaces /= 2;
-  this->NumOfFaces = numOfInteriorFaces + numOfBoundaryFaces;
 
   sprintf(str, "(10 (0 1 %x 0))\n\n", this->NumOfPoints);
   this->WriteStringToFile(str, this->caseFd);
@@ -815,7 +819,7 @@ int vtkFluentWriter::WriteGeometry()
       {
         vtkIdType cellId = volumeCellIdArray->GetId(i);
 
-        if (boundaryDataArray->GetTuple1(cellId) != blockId)
+        if (blockIdArray->GetTuple1(cellId) != blockId)
         {
           continue;
         }
@@ -831,7 +835,7 @@ int vtkFluentWriter::WriteGeometry()
       {
         vtkIdType cellId = volumeCellIdArray->GetId(i);
 
-        if (boundaryDataArray->GetTuple1(cellId) != blockId)
+        if (blockIdArray->GetTuple1(cellId) != blockId)
         {
           continue;
         }
@@ -901,118 +905,52 @@ int vtkFluentWriter::WriteGeometry()
     }
   }
 
-  vtkIdList* volumeCellIdMap = vtkIdList::New();
-  for (int i = 0; i < numOfCells; ++i)
+  std::map<int, int> volumeCellIdMap;
+  for (int i = -1; i < numOfCells; ++i)
   {
-    volumeCellIdMap->InsertNextId(-1);
+    volumeCellIdMap[i] = -1;
   }
 
   for (int i = 0; i < this->NumOfVolumes; ++i)
   {
-    volumeCellIdMap->SetId(volumeCellIdArray->GetId(i), i);
-  }  
+    volumeCellIdMap[volumeCellIdArray->GetId(i)] = i;
+  }
 
-  this->WriteStringToFile("(0 \"Faces Section\")\n", this->caseFd);
-  sprintf(str, "(13 (0 1 %x 0))\n\n", this->NumOfFaces);
-  this->WriteStringToFile(str, this->caseFd);
-
-  int faceOffset = 1;
   vtkIdList* neighborCellIds = vtkIdList::New();
-  for (size_t i = 0; i < this->BoundaryFaceBlockIds.size(); ++i)
+  
+  for (vtkIdType cId = 0; cId < numOfCells; ++cId)
   {
-    int blockId = this->BoundaryFaceBlockIds[i];
+    int blockId = blockIdArray->GetTuple1(cId);
 
-    if (this->BinaryFile)
+    vtkCell* cell = this->UnstructuredOutput->GetCell(cId);
+    if (cell->GetCellDimension() == 2)
     {
-      sprintf(str, "(3013 (%x %x %x 3 0)(", entityId, faceOffset, faceOffset + NumBlockElments[blockId] - 1);
-      this->WriteStringToFile(str, this->caseFd);
-    }
-    else
-    {
-      sprintf(str, "(13 (%x %x %x 3 0)(\n", entityId, faceOffset, faceOffset+NumBlockElments[blockId]-1);
-      this->WriteStringToFile(str, this->caseFd);
-    }
-
-    for (vtkIdType cellId = 0; cellId < numOfCells; ++cellId)
-    {
-      if (boundaryDataArray->GetTuple1(cellId) != blockId)
-      {
-        continue;
-      }
-
-      vtkIdList* facePointIds = this->UnstructuredOutput->GetCell(cellId)->GetPointIds();
-      this->UnstructuredOutput->GetCellNeighbors(cellId, facePointIds, neighborCellIds);
+      vtkIdList* facePointIds = cell->GetPointIds();
+      this->UnstructuredOutput->GetCellNeighbors(cId, facePointIds, neighborCellIds);
       vtkIdType neighborCellId = neighborCellIds->GetId(0);
       vtkIdType numIds = facePointIds->GetNumberOfIds();
 
-      if (this->BinaryFile)
+      Face face;
+      for (vtkIdType ptId = 0; ptId < numIds; ++ptId)
       {
-        int *faceSet = new int[3+numIds];
-        faceSet[0] = numIds;
-        for (vtkIdType pntId = 0; pntId < numIds; ++pntId)
-        {
-          faceSet[pntId+1] = (int)facePointIds->GetId(pntId) + 1;
-        }
-        faceSet[numIds+1] = 0;
-        faceSet[numIds+2] = (int)volumeCellIdMap->GetId(neighborCellId) + 1;
-        this->WriteIntToFile(faceSet, 3+numIds, this->caseFd);
-        delete[] faceSet;
+        face.nodes.push_back((int)facePointIds->GetId(ptId));
       }
-      else
-      {
-        sprintf(str, " %d", numIds);
-        this->WriteStringToFile(str, this->caseFd);
-        for (vtkIdType pntId = 0; pntId < numIds; ++pntId)
-        {
-          sprintf(str, " %x", (int)facePointIds->GetId(pntId)+1);
-          this->WriteStringToFile(str, this->caseFd);
-        }
-        sprintf(str, " 0 %x\n", (int)volumeCellIdMap->GetId(neighborCellId)+1);
-        this->WriteStringToFile(str, this->caseFd);
-      }
-    }
-    if (this->BinaryFile)
-    {
-      this->WriteStringToFile(")\nEnd of Binary Section   3013)\n\n", this->caseFd);
-    }
-    else
-    {
-      this->WriteStringToFile("))\n\n", this->caseFd);
+      face.c0 = volumeCellIdMap[neighborCellId];
+      face.c1 = volumeCellIdMap[cId];
+
+      this->Faces[blockId].push_back(face);
+
+      continue;
     }
 
-    faceOffset += this->NumBlockElments[blockId];
-    ++entityId;
-  }
-
-  if (this->BinaryFile)
-  {
-    sprintf(str, "(3013 (%x %x %x 2 0)(", (int)entityId, faceOffset, faceOffset + numOfInteriorFaces - 1);
-  }
-  else
-  {
-    sprintf(str, "(13 (%x %x %x 2 0)(\n", (int)entityId, faceOffset, faceOffset+numOfInteriorFaces-1);
-  }
-  this->WriteStringToFile(str, this->caseFd);
-
-  for (size_t i = 0; i < this->VolumeBlockIds.size(); ++i)
-  {
-    int blockId = this->VolumeBlockIds[i];
-
-    for (int i = 0; i < this->NumOfVolumes; ++i)
+    if (cell->GetCellDimension() == 3)
     {
-      vtkIdType cellId = volumeCellIdArray->GetId(i);
+      vtkIdType numFaces = cell->GetNumberOfFaces();
 
-      if (boundaryDataArray->GetTuple1(cellId) != blockId)
+      for (vtkIdType fId = 0; fId < numFaces; ++fId)
       {
-        continue;
-      }
-
-      vtkCell *cell = this->UnstructuredOutput->GetCell(cellId);
-      vtkIdType numOfFaces = cell->GetNumberOfFaces();
-      for (vtkIdType fId = 0; fId < numOfFaces; ++fId)
-      {
-        vtkCell* face = cell->GetFace(fId);
-        vtkIdList* facePointIds = face->GetPointIds();
+        vtkCell* f = cell->GetFace(fId);
+        vtkIdList* facePointIds = f->GetPointIds();
         int numIds = facePointIds->GetNumberOfIds();
 
         if (cell->GetCellType() == VTK_VOXEL)
@@ -1023,43 +961,96 @@ int vtkFluentWriter::WriteGeometry()
           facePointIds->SetId(3, id2);
         }
 
-        this->UnstructuredOutput->GetCellNeighbors(cellId, facePointIds, neighborCellIds);
+        this->UnstructuredOutput->GetCellNeighbors(cId, facePointIds, neighborCellIds);
+        vtkIdType neighborCellId = neighborCellIds->GetId(0);
+
         int numNeighbors = neighborCellIds->GetNumberOfIds();
         if (numNeighbors != 1 ||
-            volumeCellIdMap->GetId(neighborCellIds->GetId(0)) == -1)
+            volumeCellIdMap[neighborCellId] == -1)
         {
           continue;
         }
-        if (neighborCellIds->GetId(0) < cellId)
+        if (neighborCellId < cId)
         {
           continue;
         }
 
-        if (this->BinaryFile)
+        Face face;
+        for (vtkIdType ptId = 0; ptId < numIds; ++ptId)
         {
-          int *faceSet = new int[3 + numIds];
-          faceSet[0] = numIds;
-          for (vtkIdType pntId = 0; pntId < numIds; ++pntId)
-          {
-            faceSet[pntId + 1] = (int)facePointIds->GetId(pntId) + 1;
-          }
-          faceSet[numIds + 1] = (int)volumeCellIdMap->GetId(neighborCellIds->GetId(0)) + 1;
-          faceSet[numIds + 2] = (int)volumeCellIdMap->GetId(cellId) + 1;
-          this->WriteIntToFile(faceSet, 3 + numIds, this->caseFd);
-          delete[] faceSet;
+          face.nodes.push_back((int)facePointIds->GetId(ptId));
         }
-        else
+        face.c1 = volumeCellIdMap[neighborCellId];
+        face.c0 = volumeCellIdMap[cId];
+
+        this->Faces[blockId].push_back(face);
+      }
+    }
+  }
+
+  this->NumOfFaces = 0;
+  for (auto facesIter = this->Faces.begin(); facesIter != this->Faces.end(); ++facesIter)
+  {
+    this->NumOfFaces += (int)facesIter->second.size();
+  }
+
+  this->WriteStringToFile("(0 \"Faces Section\")\n", this->caseFd);
+  sprintf(str, "(13 (0 1 %x 0))\n\n", this->NumOfFaces);
+  this->WriteStringToFile(str, this->caseFd);
+
+  std::vector<int> orderedFaceBlockId = this->BoundaryFaceBlockIds;
+  auto volIter = this->VolumeBlockIds.begin();
+  for (; volIter != this->VolumeBlockIds.end(); ++volIter)
+  {
+    orderedFaceBlockId.push_back(*volIter);
+  }
+
+  unsigned faceOffset = 1;
+  for (size_t i = 0; i < orderedFaceBlockId.size(); ++i)
+  {
+    int blockId = orderedFaceBlockId[i];
+    auto faces = this->Faces[blockId];
+
+    if (this->BinaryFile)
+    {
+      sprintf(str, "(3013 (%x %x %x 3 0)(", entityId, faceOffset, faceOffset + unsigned(faces.size()-1));
+      this->WriteStringToFile(str, this->caseFd);
+    }
+    else
+    {
+      sprintf(str, "(13 (%x %x %x 3 0)(\n", entityId, faceOffset, faceOffset + unsigned(faces.size()-1));
+      this->WriteStringToFile(str, this->caseFd);
+    }
+
+    for (auto faceIter = faces.begin(); faceIter != faces.end(); ++faceIter)
+    {
+      size_t numIds = faceIter->nodes.size();
+
+      if (this->BinaryFile)
+      {
+        int *faceSet = new int[3+numIds];
+        faceSet[0] = (int)numIds;
+        for (vtkIdType pntId = 0; pntId < (int)numIds; ++pntId)
         {
-          sprintf(str, " %d", numIds);
-          this->WriteStringToFile(str, this->caseFd);
-          for (int pntId = 0; pntId < numIds; ++pntId)
-          {
-            sprintf(str, " %x", (int)facePointIds->GetId(pntId) + 1);
-            this->WriteStringToFile(str, this->caseFd);
-          }
-          sprintf(str, " %x %x\n", (int)volumeCellIdMap->GetId(neighborCellIds->GetId(0)) + 1, (int)volumeCellIdMap->GetId(cellId) + 1);
+          faceSet[pntId+1] = faceIter->nodes[pntId] + 1;
+        }
+        faceSet[numIds+1] = volumeCellIdMap[faceIter->c0]+1;
+        faceSet[numIds+2] = volumeCellIdMap[faceIter->c1]+1;
+        this->WriteIntToFile(faceSet, 3+(int)numIds, this->caseFd);
+        delete[] faceSet;
+      }
+      else
+      {
+        sprintf(str, " %d", (int)numIds);
+        this->WriteStringToFile(str, this->caseFd);
+        for (vtkIdType pntId = 0; pntId < (int)numIds; ++pntId)
+        {
+          sprintf(str, " %x", faceIter->nodes[pntId]+1);
           this->WriteStringToFile(str, this->caseFd);
         }
+        sprintf(str, " %x %x\n", volumeCellIdMap[faceIter->c0]+1
+                               , volumeCellIdMap[faceIter->c1]+1);
+        this->WriteStringToFile(str, this->caseFd);
       }
     }
     if (this->BinaryFile)
@@ -1070,7 +1061,8 @@ int vtkFluentWriter::WriteGeometry()
     {
       this->WriteStringToFile("))\n\n", this->caseFd);
     }
-    faceOffset += numOfInteriorFaces;
+
+    faceOffset += (int)faces.size();
     ++entityId;
   }
   neighborCellIds->Delete();
@@ -1105,7 +1097,6 @@ int vtkFluentWriter::WriteGeometry()
   }
 
   volumeCellIdArray->Delete();
-  volumeCellIdMap->Delete();
 
   return rc;
 }
